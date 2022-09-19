@@ -8,22 +8,64 @@ Original file is located at
 """
 
 # !pip install pyTelegramBotAPI
+# !pip install pytube
 
 """importar paquete principal"""
 
-from config import *
+from config import * # contiene los valores de TELEGRAM_TOKEN, files_dict y files_nodocs
+
+import os
 import telebot
+from telebot.types import InlineKeyboardMarkup # para crear botones inline
+from telebot.types import InlineKeyboardButton # para definir botones inline
+import pytube
+
+"""inicializa el bot """
 
 # HermesBot
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+"""define los comandos a correr"""
+
+@bot.callback_query_handler(func=lambda x: True)
+def respuesta_botones_inline(call):
+  """ Gestionar las acciones de los botones callback_data. """
+  cid = call.from_user.id
+  mid = call.message.id
+  if call.data == 'cerrar':
+    bot.delete_message(cid, mid)
+  elif call.data.startswith('/down'):
+    """ Si preciona para descargar cualquiera de los archivos que se listen por botones. """
+    print(call.data)
+    opcion, *entry = call.data[5:].split()
+    files = ' '.join(entry)
+    del entry
+
+    if not files:
+      texto  = f'Debe introducir el nombre del archivo de {opcion} a descargar\nEjemplo:\n/down{opcion} Archivo'
+      bot.send_message(cid, texto)
+      return 1
+    else:
+      path = os.getcwd()
+
+      if os.path.isfile(f'{path}\\{opcion}\\{files}'):
+        archivo = open(f'{path}\\{opcion}\\{files}', 'rb')
+        bot.send_document(cid, archivo, files)
+        print('archivo enviado!')
+      print(files)
+  else:
+    print(call.data)
+    
 # responde al comando /start
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
   '''
-  Da la bienvenida al bot
+  Da la bienvenida al bot de Hermes
   '''
-  bot.reply_to(message, "¡Hola! ¿Como estas?")
+  path = os.getcwd()
+  print(path)
+
+  bot.reply_to(message, f"Bienvenidos al bot de Hermes\nDirectorio Base: {path}", disable_web_page_preview=True)
 
 # responde al comando /help
 @bot.message_handler(commands=['help'])
@@ -31,42 +73,150 @@ def cmd_help(message):
   '''
   Pregunta en que puede ayudar
   '''
-  bot.reply_to(message, "¿En que te puedo ayudar?")
+  texto_md  = '*__COMANDOS DISPONIBLES__*\n'
+  texto_md += '*/start*: bienvenida\n'
+  texto_md += '*/help*: presentacion de listado de los comandos posibles\n'
+#  texto_md += '*/sendwhatsapp*: envio de un mensaje de texto a un numero telefonico a traves de whatsapp\n\n'
+  texto_md += '*/ytvideo*: descarga desde un link de youtube en formato video\n'
+  texto_md += '*/ytaudio [link del audio a descargar]*: descarga desde un link de youtube en formato audio\n\n'
+  texto_md += '*/lsaudios*: lista los archivos de audio disponibles\n'
+  texto_md += '*/lsvideos*: lista los archivos de video disponibles\n'
+  texto_md += '*/lsimagenes*: lista los archivos de imagenes disponibles\n'
+  texto_md += '*/lsdocs*: lista los otros documentos disponibles\n\n'
 
-# responde al comando /imagen
-@bot.message_handler(commands=['imagen'])
-def cmd_send_imagen(message):
-  '''
-  Envia una foto
-  '''
-  foto = open('Buho_Luna.jpg', 'rb')
-  bot.send_photo(message.chat.id, foto, "Buho Luna!")
+  texto_md += '*/downaudios [nombre de archivo]*: Descargar el archivo de audio disponibles\n'
+  texto_md += '*/downvideos [nombre de archivo]*: Descargar el archivo de video disponibles\n'
+  texto_md += '*/downimagenes [nombre de archivo]*: Descargar el archivo de imagenes disponibles\n'
+  texto_md += '*/downdocs [nombre de archivo]*: Descargar el archivo de otros tipos documentos disponibles\n\n'
 
-# responde al comando /pdf
-@bot.message_handler(commands=['pdf'])
-def cmd_send_pdf(message):
-  '''
-  Envia una foto
-  '''
-  archivo = open('9. Noveno grado.pdf', 'rb')
-  bot.send_document(message.chat.id, archivo, "Buho Luna!")
+#  texto_md += '*/rmaudio*: Borra el archivo de audio indicado\n'
+#  texto_md += '*/rmvideo*: Borra el archivo de video indicado\n'
+#  texto_md += '*/rmimagen*: Borra el archivo de imagenes indicado\n'
+#  texto_md += '*/rmdoc*: Borra el archivo de documentos indicado'
 
-# responde al comando /pdf
-@bot.message_handler(commands=['audio'])
-def cmd_send_audio(message):
+  bot.reply_to(message, texto_md, parse_mode='MarkDownV2', disable_web_page_preview=True)
+
+# responde al comando /ls (audios, videos, imagenes, docs)
+@bot.message_handler(commands=['lsaudios', 'lsvideos', 'lsimagenes', 'lsdocs'])
+def cmd_ls(message):
   '''
-  Envia una foto
+  Lista de archivos segun comando
+  ''' 
+  opcion = message.text[3:]
+  path  = os.getcwd()
+  path += '\\' + opcion 
+
+  os.makedirs(path, exist_ok=True)
+
+  i = 0
+  markup = InlineKeyboardMarkup(row_width=1) # numero de botones en cada fila 3 por defecto
+
+  with os.scandir(path) as it:
+    files = ''
+    for entry in it:
+      if opcion in files_dict.keys():
+        i += 1
+        if not entry.name.startswith('.') and entry.is_file() and entry.name[-4:] in files_dict[opcion]:
+          files += f'{i}. {entry.name} \n'
+          markup.add(InlineKeyboardButton(f"{i}. {entry.name}", callback_data=f"/down{opcion} {entry.name}"))
+      elif not opcion in files_dict.keys():
+        if not entry.name.startswith('.') and entry.is_file() and not entry.name[-4:] in files_nodocs:
+          files += f'{i}. {entry.name} \n'
+          markup.add(InlineKeyboardButton(f"{i}. {entry.name}", callback_data=f"/down{opcion} {entry.name}"))
+
+  markup.add(InlineKeyboardButton("Cerrar", callback_data="cerrar"))
+  bot.send_message(message.chat.id, f"Lista de {opcion}:\n {files}", reply_markup=markup)
+
+  print(files)
+
+# responde al comando /down (audios, videos, imagenes, docs)
+@bot.message_handler(commands=['downaudios', 'downvideos', 'downimagenes', 'downdocs'])
+def cmd_down(message):
   '''
-  audio = open('audio.mp3', 'rb')
-  bot.send_audio (message.chat.id, audio, "vivaldi")
+  Lista de archivos segun comando
+  ''' 
+  
+  opcion, *entry = message.text[5:].split()
+  files = ' '.join(entry)
+  del entry
+
+  if not files:
+    texto  = f'Debe introducir el nombre del archivo de {opcion} a descargar\nEjemplo:\n/down{opcion} Archivo'
+    bot.send_message(message.chat.id, texto)
+    return 1
+  else:
+    path = os.getcwd()
+
+    if os.path.isfile(f'{path}\\{opcion}\\{files}'):
+      archivo = open(f'{path}\\{opcion}\\{files}', 'rb')
+      bot.send_document(message.chat.id, archivo, files)
+      print('archivo enviado!')
+    print(files)
+
+# responde al comando /up (videos)
+@bot.message_handler(content_types=['video'])
+def cmd_upvideos(message):
+  '''
+  Carga a la maquina un archivo enviado al bot
+  ''' 
+  
+  file_info = bot.get_file(message.video.file_id)
+  downloaded_file = bot.download_file(file_info.file_path)
+  path = file_info.file_path
+  print(path)
+  print(file_info)
+  with open(path,'wb') as new_file:
+    new_file.write(downloaded_file)
+  bot.reply_to (message, 'Video completa!')
+  
+# responde al comando /up (imagenes)
+@bot.message_handler(content_types=['photo'])
+def cmd_upimagenes(message):
+  '''
+  Carga a la maquina un archivo enviado al bot
+  ''' 
+  
+  raw = message.photo[2].file_id
+  path = f"imagenes\\{raw}.jpg"
+  file_info = bot.get_file(raw)
+  downloaded_file = bot.download_file(file_info.file_path)
+  with open(path,'wb') as new_file:
+    new_file.write(downloaded_file)
+  print(message.photo[2].gitattributes)
+  print('Carga completa!')
+  print(path)
+
+# responde al comando /ytaudios /ytvideos
+@bot.message_handler(commands=['ytaudios', 'ytvideos'])
+def cmd_ytaudios(message):
+  '''
+  Descarga el audio o video de youtube
+  ''' 
+  
+  opcion, *entry = message.text[3:].split()
+  link = ' '.join(entry)
+  del entry
+
+  youlink = pytube.YouTube(link)
+  # print(f'Titulo: {youlink.title}')
+  # print(f'Autor: {youlink.author}')
+  youlink_file = ''.join(filter(str.isalnum, youlink.title))
+  youlink_file = youlink_file[:47]
+
+  if opcion == 'audio':
+    youlink.streams.filter(abr='160kbps',progressive=False).first().download(output_path=opcion, filename=f'{youlink_file}.mp3')
+    print(f'Descarga con exito de: {link} \nComo {youlink.title}.mp3')
+  elif opcion == 'video':
+    youlink.streams.get_highest_resolution().download(output_path=opcion, filename=f'{youlink_file}.mp4')
+    print(f'Descarga con exito de: {link} \nComo {youlink_file}')
 
 # responde a mensajes de texto
 @bot.message_handler(content_types=["text"])
 def bot_mensajes_texto(message):
   '''
-  Gestiona los mensajes recibidos
+  Gestiona los mensajes textos recibidos
   '''
-  texto_md  = '*__FORMATOS MARKDOWN__*\n'
+  texto_md  = '*__FORMATOS MARKDOWN__*\n\n'
   texto_md += '*NEGRITA*\n'
   texto_md += '_CURSIVA_\n'
   texto_md += '__SUBRAYADO__\n'
@@ -75,13 +225,26 @@ def bot_mensajes_texto(message):
   texto_md += '||SPOILER||\n'
   texto_md += '[ENLACE](https://beacons.ai/hermesvillarreal)\n'
   if message.text.startswith('/'):
-    bot.send_message(message.chat.id, 'Comando no disponible')
+    bot.send_message(message.chat.id, 'Comando no disponible\n\nutilice /help para revisar la lista de comandos')
   else:
     bot.send_message(message.chat.id, texto_md, parse_mode='MarkDownV2', disable_web_page_preview=True)
 
+"""ejecucion del main"""
 
 ## MAIN ###
 #if __name__ == '__name__':
 print('Iniciando el bot')
-bot.polling()
+bot.set_my_commands([telebot.types.BotCommand('/start', 'bienvenida'),
+    telebot.types.BotCommand('/help', 'presentacion de listado de los comandos posibles'),
+    telebot.types.BotCommand('/lsaudios', 'lista los archivos de audio disponibles'),
+    telebot.types.BotCommand('/lsvideos', 'lista los archivos de video disponibles'),
+    telebot.types.BotCommand('/lsimagenes', 'lista los archivos de imagenes disponibles'),
+    telebot.types.BotCommand('/lsdocs', 'lista los otros documentos disponibles'),
+    telebot.types.BotCommand('/downaudios', 'Descargar el archivo de audio disponibles'),
+    telebot.types.BotCommand('/downvideos', 'Descargar el archivo de video disponibles'),
+    telebot.types.BotCommand('/downimagenes', 'Descargar el archivo de imagenes disponibles'),
+    telebot.types.BotCommand('/downdocs', 'Descargar el archivo de otros tipos documentos disponibles'),
+    telebot.types.BotCommand('/ytaudios', 'Descargar el audio de un video de youtube'),
+    telebot.types.BotCommand('/ytvideos', 'Descargar el video de un video de youtube')])
+bot.infinity_polling()
 print('Termiando el bot')
